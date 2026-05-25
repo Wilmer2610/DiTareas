@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DiTareas — Panel</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body data-page="dashboard">
+
+  <header class="app-header">
+    <div class="header-inner">
+      <a href="index.html" class="brand-group">
+        <div class="brand-logo">
+          <img src="Gemini_Generated_Image_nt6mnznt6mnznt6m.png" alt="" />
+        </div>
+        <div>
+          <div class="brand-name">DiTareas</div>
+          <div class="brand-tagline">Gestor de tareas</div>
+        </div>
+      </a>
+      <nav class="site-nav">
+        <a href="index.html" class="active">Inicio</a>
+        <a href="tareas.html">Mis tareas</a>
+        <a href="nueva-tarea.html" class="nav-cta">+ Nueva tarea</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <div class="page-wrapper">
+
+      <div class="dashboard-hero">
+        <div>
+          <p class="hero-eyebrow">Bienvenido de nuevo</p>
+          <h1 class="hero-title">Administra tu día<br>con claridad</h1>
+          <p class="hero-desc">Accede rápido a tus tareas pendientes, revisa las completadas y añade evidencia cuando termines.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="nueva-tarea.html">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+              Crear nueva tarea
+            </a>
+            <a class="btn btn-secondary" href="tareas.html">Ver todas las tareas</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon pending">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" d="M12 6v6l4 2"/></svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Pendientes</div>
+            <div class="stat-value" id="pendingCount">0</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon done">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Completadas</div>
+            <div class="stat-value" id="completedCount">0</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <div id="toast"></div>
+  <script src="js/app.js"></script>
+</body>
+</html>
