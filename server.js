@@ -1,82 +1,177 @@
 const path = require('path');
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
+const { Pool } = require('pg');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const dbPath = path.join(__dirname, 'database', 'Ditarea.sqlite');
+const DATABASE_URL = process.env.DATABASE_URL;
+const usePostgres = Boolean(DATABASE_URL);
 
-const db = new sqlite3.Database(dbPath, (error) => {
-  if (error) {
-    console.error('No se pudo conectar a la base de datos:', error.message);
+let db;
+let sqliteDb;
+
+if (usePostgres) {
+  db = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false,
+    },
+  });
+
+  db.connect()
+    .then(() => console.log('Conectado a PostgreSQL'))
+    .catch((error) => {
+      console.error('No se pudo conectar a PostgreSQL:', error.message);
+      process.exit(1);
+    });
+
+  const createTableSql = `
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      date TEXT,
+      priority TEXT,
+      evidence TEXT,
+      hours REAL,
+      completed BOOLEAN DEFAULT FALSE,
+      createdAt TEXT,
+      completedAt TEXT
+    );
+  `;
+
+  db.query(createTableSql).catch((error) => {
+    console.error('Error creando la tabla tasks en PostgreSQL:', error.message);
     process.exit(1);
-  }
-});
+  });
+} else {
+  const dbPath = path.join(__dirname, 'database', 'Ditarea.sqlite');
+  sqliteDb = new sqlite3.Database(dbPath, (error) => {
+    if (error) {
+      console.error('No se pudo conectar a la base de datos SQLite:', error.message);
+      process.exit(1);
+    }
+  });
 
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT,
-    date TEXT,
-    priority TEXT,
-    evidence TEXT,
-    hours REAL,
-    completed INTEGER DEFAULT 0,
-    createdAt TEXT,
-    completedAt TEXT
-  )`);
-});
+  sqliteDb.serialize(() => {
+    sqliteDb.run(`CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      date TEXT,
+      priority TEXT,
+      evidence TEXT,
+      hours REAL,
+      completed INTEGER DEFAULT 0,
+      createdAt TEXT,
+      completedAt TEXT
+    )`);
+  });
+}
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname)));
 
-app.get('/tasks', (req, res) => {
-  db.all('SELECT * FROM tasks ORDER BY createdAt DESC', (error, rows) => {
-    if (error) return res.status(500).json({ error: error.message });
-    const tasks = rows.map((row) => ({
-      ...row,
-      completed: Boolean(row.completed),
-    }));
-    res.json(tasks);
-  });
+app.get('/tasks', async (req, res) => {
+  try {
+    if (usePostgres) {
+      const result = await db.query('SELECT * FROM tasks ORDER BY createdAt DESC');
+      const tasks = result.rows.map((row) => ({
+        ...row,
+        completed: Boolean(row.completed),
+      }));
+      res.json(tasks);
+      return;
+    }
+
+    sqliteDb.all('SELECT * FROM tasks ORDER BY createdAt DESC', (error, rows) => {
+      if (error) return res.status(500).json({ error: error.message });
+      const tasks = rows.map((row) => ({
+        ...row,
+        completed: Boolean(row.completed),
+      }));
+      res.json(tasks);
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.post('/tasks', (req, res) => {
+app.post('/tasks', async (req, res) => {
   const { id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt } = req.body;
-  const stmt = db.prepare(`INSERT INTO tasks (id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  stmt.run(id, title, description, date, priority, evidence, hours, completed ? 1 : 0, createdAt, completedAt, function (error) {
-    if (error) return res.status(500).json({ error: error.message });
-    res.status(201).json(req.body);
-  });
-  stmt.finalize();
+
+  try {
+    if (usePostgres) {
+      await db.query(
+        `INSERT INTO tasks (id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt]
+      );
+      return res.status(201).json(req.body);
+    }
+
+    const stmt = sqliteDb.prepare(`INSERT INTO tasks (id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    stmt.run(id, title, description, date, priority, evidence, hours, completed ? 1 : 0, createdAt, completedAt, function (error) {
+      if (error) return res.status(500).json({ error: error.message });
+      res.status(201).json(req.body);
+    });
+    stmt.finalize();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.put('/tasks/:id', (req, res) => {
+app.put('/tasks/:id', async (req, res) => {
   const { id } = req.params;
   const { title, description, date, priority, evidence, hours, completed, completedAt } = req.body;
-  const stmt = db.prepare(`UPDATE tasks SET title = ?, description = ?, date = ?, priority = ?, evidence = ?, hours = ?, completed = ?, completedAt = ? WHERE id = ?`);
-  stmt.run(title, description, date, priority, evidence, hours, completed ? 1 : 0, completedAt, id, function (error) {
-    if (error) return res.status(500).json({ error: error.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
-    res.json({ success: true });
-  });
-  stmt.finalize();
+
+  try {
+    if (usePostgres) {
+      const result = await db.query(
+        `UPDATE tasks SET title = $1, description = $2, date = $3, priority = $4, evidence = $5, hours = $6, completed = $7, completedAt = $8 WHERE id = $9`,
+        [title, description, date, priority, evidence, hours, completed, completedAt, id]
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
+      return res.json({ success: true });
+    }
+
+    const stmt = sqliteDb.prepare(`UPDATE tasks SET title = ?, description = ?, date = ?, priority = ?, evidence = ?, hours = ?, completed = ?, completedAt = ? WHERE id = ?`);
+    stmt.run(title, description, date, priority, evidence, hours, completed ? 1 : 0, completedAt, id, function (error) {
+      if (error) return res.status(500).json({ error: error.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
+      res.json({ success: true });
+    });
+    stmt.finalize();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.delete('/tasks/:id', (req, res) => {
+app.delete('/tasks/:id', async (req, res) => {
   const { id } = req.params;
-  const stmt = db.prepare('DELETE FROM tasks WHERE id = ?');
-  stmt.run(id, function (error) {
-    if (error) return res.status(500).json({ error: error.message });
-    if (this.changes === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
-    res.json({ success: true });
-  });
-  stmt.finalize();
+
+  try {
+    if (usePostgres) {
+      const result = await db.query('DELETE FROM tasks WHERE id = $1', [id]);
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
+      return res.json({ success: true });
+    }
+
+    const stmt = sqliteDb.prepare('DELETE FROM tasks WHERE id = ?');
+    stmt.run(id, function (error) {
+      if (error) return res.status(500).json({ error: error.message });
+      if (this.changes === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
+      res.json({ success: true });
+    });
+    stmt.finalize();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.listen(PORT, () => {

@@ -1,14 +1,51 @@
 ﻿/* DiTareas — app.js */
 
-const STORAGE_KEY = 'ditareas_tasks';
+const API_BASE = '';
+let tasksCache = [];
 
-function getTasks() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-  catch { return []; }
+async function apiJson(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    ...options,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || 'Error de red');
+  }
+
+  return response.json();
 }
 
-function saveTasks(tasks) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+async function getTasks() {
+  const tasks = await apiJson('/tasks');
+  tasksCache = tasks.map((task) => ({
+    ...task,
+    completed: Boolean(task.completed),
+  }));
+  return tasksCache;
+}
+
+async function createTask(task) {
+  return apiJson('/tasks', {
+    method: 'POST',
+    body: JSON.stringify(task),
+  });
+}
+
+async function updateTask(id, task) {
+  return apiJson(`/tasks/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(task),
+  });
+}
+
+async function deleteTaskRequest(id) {
+  return apiJson(`/tasks/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
 }
 
 function showToast(msg) {
@@ -36,55 +73,72 @@ function statusBadge(done) {
     : '<span class="badge badge-pending">● Pendiente</span>';
 }
 
-/* ── DASHBOARD ─────────────────────────────────── */
-
-function initDashboard() {
-  const tasks = getTasks();
-  const pending   = tasks.filter(t => !t.done).length;
-  const completed = tasks.filter(t =>  t.done).length;
+async function initDashboard() {
+  const tasks = await getTasks();
+  const pending = tasks.filter((t) => !t.completed).length;
+  const completed = tasks.filter((t) => t.completed).length;
 
   const pEl = document.getElementById('pendingCount');
   const cEl = document.getElementById('completedCount');
-  if (pEl) pEl.textContent   = pending;
-  if (cEl) cEl.textContent   = completed;
+  if (pEl) pEl.textContent = pending;
+  if (cEl) cEl.textContent = completed;
 }
 
-/* ── CREATE FORM ───────────────────────────────── */
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function escHtml(value) {
+  if (value === undefined || value === null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function initCreateForm() {
   const form = document.getElementById('taskForm');
   if (!form) return;
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const title = document.getElementById('taskTitle').value.trim();
     if (!title) return;
 
-    const tasks = getTasks();
-    tasks.push({
-      id: Date.now(),
+    const newTask = {
+      id: Date.now().toString(),
       title,
       description: document.getElementById('taskDescription').value.trim(),
       date: document.getElementById('taskDate').value,
       priority: document.getElementById('taskPriority').value,
-      done: false,
-      hours: '',
       evidence: null,
-    });
-    saveTasks(tasks);
-    showToast('Tarea creada correctamente');
-    setTimeout(() => window.location.href = 'tareas.html', 900);
+      hours: '',
+      completed: false,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    };
+
+    try {
+      await createTask(newTask);
+      showToast('Tarea creada correctamente');
+      setTimeout(() => { window.location.href = 'tareas.html'; }, 900);
+    } catch (error) {
+      showToast(error.message || 'Error al crear la tarea');
+    }
   });
 }
 
-/* ── TASK LIST ─────────────────────────────────── */
-
-function initTaskList() {
+async function initTaskList() {
   const tbody = document.querySelector('#taskTable tbody');
   if (!tbody) return;
-
-  renderTable();
 
   const editPanel = document.getElementById('editPanel');
   const editForm = document.getElementById('editTaskForm');
@@ -94,39 +148,43 @@ function initTaskList() {
   const editPreview = document.getElementById('editEvidencePreview');
   let activeEditId = null;
 
+  async function refreshTable() {
+    const tasks = await getTasks();
+    renderTable(tasks);
+  }
+
   if (editForm) {
-    editForm.addEventListener('submit', (e) => {
+    editForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!activeEditId) return;
 
-      const tasks = getTasks();
-      const task = tasks.find((t) => String(t.id) === String(activeEditId));
+      const task = tasksCache.find((t) => String(t.id) === String(activeEditId));
       if (!task) return;
 
       const title = document.getElementById('editTaskTitle').value.trim();
       if (!title) return;
 
-      const updateTask = (imageData) => {
-        task.title = title;
-        task.description = document.getElementById('editTaskDescription').value.trim();
-        task.date = document.getElementById('editTaskDate').value;
-        task.priority = document.getElementById('editTaskPriority').value;
-        task.hours = document.getElementById('editTaskHours').value;
-        task.done = document.getElementById('editTaskStatus').value === 'true';
-        if (imageData !== undefined) task.evidence = imageData;
-        saveTasks(tasks);
-        renderTable();
-        showToast('Tarea actualizada correctamente');
-        closeEditPanel();
+      const updatedTask = {
+        ...task,
+        title,
+        description: document.getElementById('editTaskDescription').value.trim(),
+        date: document.getElementById('editTaskDate').value,
+        priority: document.getElementById('editTaskPriority').value,
+        hours: document.getElementById('editTaskHours').value,
+        completed: document.getElementById('editTaskStatus').value === 'true',
       };
 
-      const file = editFileInput?.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (event) => updateTask(event.target.result);
-        reader.readAsDataURL(file);
-      } else {
-        updateTask();
+      const file = editFileInput?.files?.[0];
+      try {
+        if (file) {
+          updatedTask.evidence = await readFileAsDataURL(file);
+        }
+        await updateTask(activeEditId, updatedTask);
+        showToast('Tarea actualizada correctamente');
+        closeEditPanel();
+        await refreshTable();
+      } catch (error) {
+        showToast(error.message || 'Error al actualizar la tarea');
       }
     });
   }
@@ -135,12 +193,16 @@ function initTaskList() {
     editFileInput.addEventListener('change', () => {
       const file = editFileInput.files[0];
       if (!file) {
-        editFileName.textContent = '';
-        editFileName.style.display = 'none';
+        if (editFileName) {
+          editFileName.textContent = '';
+          editFileName.style.display = 'none';
+        }
         return;
       }
-      editFileName.textContent = `✓ ${file.name}`;
-      editFileName.style.display = 'block';
+      if (editFileName) {
+        editFileName.textContent = `✓ ${file.name}`;
+        editFileName.style.display = 'block';
+      }
     });
   }
 
@@ -163,8 +225,7 @@ function initTaskList() {
   }
 
   window.openEditTask = (id) => {
-    const tasks = getTasks();
-    const task = tasks.find((t) => String(t.id) === String(id));
+    const task = tasksCache.find((t) => String(t.id) === String(id));
     if (!task || !editPanel) return;
 
     activeEditId = id;
@@ -174,7 +235,7 @@ function initTaskList() {
     document.getElementById('editTaskDate').value = task.date || '';
     document.getElementById('editTaskPriority').value = task.priority || 'Media';
     document.getElementById('editTaskHours').value = task.hours || '';
-    document.getElementById('editTaskStatus').value = task.done ? 'true' : 'false';
+    document.getElementById('editTaskStatus').value = task.completed ? 'true' : 'false';
 
     if (editFileInput) editFileInput.value = '';
     if (editFileName) {
@@ -182,18 +243,17 @@ function initTaskList() {
       editFileName.style.display = 'none';
     }
 
-    if (task.evidence) {
-      if (editPreview) editPreview.src = task.evidence;
+    if (task.evidence && editPreview) {
+      editPreview.src = task.evidence;
       if (editPreviewWrap) editPreviewWrap.style.display = 'block';
-    } else {
-      if (editPreviewWrap) editPreviewWrap.style.display = 'none';
+    } else if (editPreviewWrap) {
+      editPreviewWrap.style.display = 'none';
     }
 
     window.scrollTo({ top: editPanel.offsetTop - 20, behavior: 'smooth' });
   };
 
-  function renderTable() {
-    const tasks = getTasks();
+  async function renderTable(tasks) {
     const badge = document.getElementById('taskCountBadge');
     const empty = document.getElementById('emptyState');
     const table = document.getElementById('taskTable');
@@ -203,112 +263,126 @@ function initTaskList() {
     if (tasks.length === 0) {
       if (table) table.style.display = 'none';
       if (empty) empty.style.display = 'block';
+      tbody.innerHTML = '';
       return;
     }
 
     if (table) table.style.display = '';
     if (empty) empty.style.display = 'none';
 
-    tbody.innerHTML = tasks.map(task => `
-      <tr id="row-${task.id}">
-        <td class="task-name">${escHtml(task.title)}</td>
-        <td class="task-desc">${escHtml(task.description) || '<span style="color:var(--ink-3);font-style:italic">Sin descripción</span>'}</td>
-        <td>${formatDate(task.date)}</td>
-        <td>${priorityBadge(task.priority)}</td>
-        <td>${statusBadge(task.done)}</td>
-        <td>
-          ${task.evidence
-            ? `<div class="evidence-cell"><img class="evidence-thumb" src="${task.evidence}" alt="Evidencia"><button class="btn btn-sm btn-secondary" type="button" onclick="downloadEvidence(${task.id})" title="Descargar evidencia">⬇</button></div>`
-            : '<span class="no-evidence">Sin evidencia</span>'}
-        </td>
-        <td>
-          <input
-            class="hours-input"
-            type="number"
-            min="0"
-            step="0.5"
-            placeholder="0"
-            value="${escHtml(task.hours)}"
-            data-id="${task.id}"
-            title="Horas dedicadas"
-          />
-        </td>
-        <td>
-          <div class="action-group">
-            <button class="btn btn-sm btn-secondary" onclick="openEditTask(${task.id})" title="Editar tarea">✎</button>
-            ${!task.done
-              ? `<button class="btn btn-sm btn-secondary" onclick="markDone(${task.id})" title="Marcar completada">✓</button>`
-              : `<button class="btn btn-sm btn-ghost" onclick="markPending(${task.id})" title="Marcar pendiente">↺</button>`}
-            <button class="btn btn-sm btn-danger" onclick="deleteTask(${task.id})" title="Eliminar">✕</button>
-          </div>
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = tasks
+      .map((task) => `
+        <tr id="row-${task.id}">
+          <td class="task-name">${escHtml(task.title)}</td>
+          <td class="task-desc">${escHtml(task.description) || '<span style="color:var(--ink-3);font-style:italic">Sin descripción</span>'}</td>
+          <td>${formatDate(task.date)}</td>
+          <td>${priorityBadge(task.priority)}</td>
+          <td>${statusBadge(task.completed)}</td>
+          <td>
+            ${task.evidence
+              ? `<div class="evidence-cell"><img class="evidence-thumb" src="${task.evidence}" alt="Evidencia"><button class="btn btn-sm btn-secondary" type="button" onclick="downloadEvidence('${task.id}')" title="Descargar evidencia">⬇</button></div>`
+              : '<span class="no-evidence">Sin evidencia</span>'}
+          </td>
+          <td>
+            <input
+              class="hours-input"
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder="0"
+              value="${escHtml(task.hours)}"
+              data-id="${task.id}"
+              title="Horas dedicadas"
+            />
+          </td>
+          <td>
+            <div class="action-group">
+              <button class="btn btn-sm btn-secondary" onclick="openEditTask('${task.id}')" title="Editar tarea">✎</button>
+              ${!task.completed
+                ? `<button class="btn btn-sm btn-secondary" onclick="markDone('${task.id}')" title="Marcar completada">✓</button>`
+                : `<button class="btn btn-sm btn-ghost" onclick="markPending('${task.id}')" title="Marcar pendiente">↺</button>`}
+              <button class="btn btn-sm btn-danger" onclick="deleteTask('${task.id}')" title="Eliminar">✕</button>
+            </div>
+          </td>
+        </tr>
+      `)
+      .join('');
 
-    tbody.querySelectorAll('.hours-input').forEach(input => {
-      input.addEventListener('change', () => {
-        const id = Number(input.dataset.id);
-        const tasks = getTasks();
-        const task = tasks.find(t => t.id === id);
-        if (task) {
-          task.hours = input.value;
-          saveTasks(tasks);
+    tbody.querySelectorAll('.hours-input').forEach((input) => {
+      input.addEventListener('change', async () => {
+        const id = input.dataset.id;
+        const task = tasksCache.find((t) => String(t.id) === String(id));
+        if (!task) return;
+        task.hours = input.value;
+        try {
+          await updateTask(id, task);
+          showToast('Horas actualizadas');
+        } catch (error) {
+          showToast(error.message || 'Error al guardar horas');
         }
       });
     });
   }
 
-  window.markDone = (id) => {
-    const tasks = getTasks();
-    const t = tasks.find(t => t.id === id);
-    if (t) { t.done = true; saveTasks(tasks); renderTable(); showToast('Tarea completada ✓'); }
+  window.deleteTask = async (id) => {
+    try {
+      await deleteTaskRequest(id);
+      showToast('Tarea eliminada');
+      await refreshTable();
+    } catch (error) {
+      showToast(error.message || 'Error al eliminar la tarea');
+    }
   };
 
-  window.markPending = (id) => {
-    const tasks = getTasks();
-    const t = tasks.find(t => t.id === id);
-    if (t) { t.done = false; saveTasks(tasks); renderTable(); showToast('Tarea marcada como pendiente'); }
+  window.markDone = async (id) => {
+    const task = tasksCache.find((t) => String(t.id) === String(id));
+    if (!task) return;
+    task.completed = true;
+    task.completedAt = new Date().toISOString();
+    try {
+      await updateTask(id, task);
+      showToast('Tarea marcada como completada');
+      await refreshTable();
+    } catch (error) {
+      showToast(error.message || 'Error al marcar la tarea');
+    }
   };
 
-  window.deleteTask = (id) => {
-    if (!confirm('¿Eliminar esta tarea?')) return;
-    const tasks = getTasks().filter(t => t.id !== id);
-    saveTasks(tasks);
-    renderTable();
-    showToast('Tarea eliminada');
+  window.markPending = async (id) => {
+    const task = tasksCache.find((t) => String(t.id) === String(id));
+    if (!task) return;
+    task.completed = false;
+    task.completedAt = null;
+    try {
+      await updateTask(id, task);
+      showToast('Tarea marcada como pendiente');
+      await refreshTable();
+    } catch (error) {
+      showToast(error.message || 'Error al marcar la tarea');
+    }
   };
 
   window.downloadEvidence = (id) => {
-    const tasks = getTasks();
-    const task = tasks.find(t => t.id === id);
+    const task = tasksCache.find((t) => String(t.id) === String(id));
     if (!task || !task.evidence) return;
-
-    const dataUrl = task.evidence;
-    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,/.exec(dataUrl);
-    const mime = match ? match[1] : 'image/png';
-    const ext = mime.split('/')[1] || 'png';
-    const safeTitle = task.title ? task.title.replace(/[^a-zA-Z0-9-_\.]/g, '_').slice(0, 40) : 'evidencia';
-    const fileName = `${safeTitle}.${ext}`;
-
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const link = document.createElement('a');
+    link.href = task.evidence;
+    link.download = `evidencia-${id}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
+
+  await refreshTable();
 }
 
-function escHtml(str) {
-  if (!str) return '';
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-/* ── INIT ──────────────────────────────────────── */
-
-document.addEventListener('DOMContentLoaded', () => {
+(function initializePage() {
   const page = document.body.dataset.page;
-  if (page === 'dashboard') initDashboard();
-  if (page === 'create')    initCreateForm();
-  if (page === 'tasks')     initTaskList();
-});
+  if (page === 'dashboard') {
+    initDashboard();
+  } else if (page === 'create') {
+    initCreateForm();
+  } else if (page === 'tasks') {
+    initTaskList();
+  }
+})();
