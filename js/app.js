@@ -2,6 +2,24 @@
 
 const API_BASE = '';
 let tasksCache = [];
+let currentFilter = 'todas';  // Track current filter
+
+/* ─── Actualizar estado activo del navbar dinámicamente ─── */
+function setActiveNavLink() {
+  const currentPath = window.location.pathname.split('/').pop() || 'index.html';
+  const navLinks = document.querySelectorAll('.site-nav a');
+  
+  navLinks.forEach((link) => {
+    link.classList.remove('active');
+    const href = link.getAttribute('href');
+    if (href === currentPath || (currentPath === '' && href === 'index.html')) {
+      link.classList.add('active');
+    }
+  });
+}
+
+// Ejecutar al cargar la página
+document.addEventListener('DOMContentLoaded', setActiveNavLink);
 
 async function apiJson(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -186,9 +204,31 @@ async function initTaskList() {
   const editPreviewWrap = document.getElementById('editEvidencePreviewWrap');
   let activeEditId = null;
 
+  // Setup filter buttons
+  const filterTabs = document.getElementById('filterTabs');
+  if (filterTabs) {
+    const filterBtns = filterTabs.querySelectorAll('.filter-btn');
+    filterBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.filter;
+        refreshTable();
+      });
+    });
+  }
+
   async function refreshTable() {
     const tasks = await getTasks();
-    renderTable(tasks);
+    let filteredTasks = tasks;
+    
+    if (currentFilter === 'pendientes') {
+      filteredTasks = tasks.filter((t) => !t.completed);
+    } else if (currentFilter === 'completadas') {
+      filteredTasks = tasks.filter((t) => t.completed);
+    }
+    
+    renderTable(filteredTasks);
   }
 
   if (editForm) {
@@ -400,12 +440,26 @@ async function initTaskList() {
   }
 
   window.deleteTask = async (id) => {
-    try {
-      await deleteTaskRequest(id);
-      showToast('Tarea eliminada');
-      await refreshTable();
-    } catch (error) {
-      showToast(error.message || 'Error al eliminar la tarea');
+    const result = await Swal.fire({
+      title: '¿Eliminar tarea?',
+      text: 'Esta acción no se puede deshacer.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#8B2B2B',
+      cancelButtonColor: '#7A7570',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true,
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await deleteTaskRequest(id);
+        showToast('Tarea eliminada');
+        await refreshTable();
+      } catch (error) {
+        showToast(error.message || 'Error al eliminar la tarea');
+      }
     }
   };
 

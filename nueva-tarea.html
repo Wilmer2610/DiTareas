@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DiTareas — Nueva tarea</title>
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.5/dist/sweetalert2.min.css" />
 </head>
 <body data-page="create">
 
@@ -103,20 +104,52 @@
   </main>
 
   <div id="toast"></div>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.5/dist/sweetalert2.all.min.js"></script>
   <script src="js/app.js"></script>
   <script>
     const fileInput = document.getElementById('taskEvidenceImages');
     const fileNameEl = document.getElementById('taskEvidenceFileNames');
+    const formFile = document.querySelector('.form-file');
+    
     if (fileInput && fileNameEl) {
       fileInput.addEventListener('change', () => {
         const files = Array.from(fileInput.files);
         if (files.length === 0) {
           fileNameEl.textContent = '';
           fileNameEl.style.display = 'none';
+          formFile?.classList.remove('drag-over');
           return;
         }
         fileNameEl.textContent = `✓ ${files.length} archivo(s) seleccionado(s)`;
         fileNameEl.style.display = 'block';
+      });
+    }
+
+    // Drag & Drop events
+    if (formFile) {
+      formFile.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        formFile.classList.add('drag-over');
+      });
+
+      formFile.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        formFile.classList.remove('drag-over');
+      });
+
+      formFile.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        formFile.classList.remove('drag-over');
+        
+        const files = e.dataTransfer.files;
+        fileInput.files = files;
+        
+        // Trigger change event
+        const event = new Event('change', { bubbles: true });
+        fileInput.dispatchEvent(event);
       });
     }
   </script>

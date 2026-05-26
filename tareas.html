@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DiTareas — Mis tareas</title>
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.5/dist/sweetalert2.min.css" />
 </head>
 <body data-page="tasks">
 
@@ -32,6 +33,13 @@
 
       <div class="page-title-row">
         <h1 class="page-title">Mis tareas</h1>
+      </div>
+
+      <!-- Filtros Rápidos -->
+      <div class="filter-tabs" id="filterTabs">
+        <button class="filter-btn active" data-filter="todas">Todas</button>
+        <button class="filter-btn" data-filter="pendientes">Pendientes</button>
+        <button class="filter-btn" data-filter="completadas">Completadas</button>
       </div>
 
       <div id="editPanel" class="form-card" style="display:none;">
@@ -144,7 +152,8 @@
           <p style="font-size:1rem;font-weight:600;color:var(--ink-2);">No hay tareas aún</p>
           <p>Crea tu primera tarea para empezar a organizar tu día.</p>
           <a href="nueva-tarea.html" class="btn btn-primary" style="margin-top:1.25rem;">Crear primera tarea</a>
-        </div>
+        </div>https://cdn.jsdelivr.net/npm/sweetalert2@11.10.5/dist/sweetalert2.all.min.js"></script>
+  <script src="
 
       </div>
     </div>
