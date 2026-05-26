@@ -12,6 +12,26 @@ const usePostgres = Boolean(DATABASE_URL);
 let db;
 let sqliteDb;
 
+function parseEvidence(evidence) {
+  if (!evidence) return [];
+  if (Array.isArray(evidence)) return evidence;
+  if (typeof evidence === 'string') {
+    try {
+      const parsed = JSON.parse(evidence);
+      return Array.isArray(parsed) ? parsed : [{ name: 'Evidencia', data: evidence }];
+    } catch {
+      return [{ name: 'Evidencia', data: evidence }];
+    }
+  }
+  return [];
+}
+
+function serializeEvidence(evidence) {
+  if (!evidence) return null;
+  if (typeof evidence === 'string') return evidence;
+  return JSON.stringify(evidence);
+}
+
 if (usePostgres) {
   db = new Pool({
     connectionString: DATABASE_URL,
@@ -83,6 +103,7 @@ app.get('/tasks', async (req, res) => {
       const tasks = result.rows.map((row) => ({
         ...row,
         completed: Boolean(row.completed),
+        evidence: parseEvidence(row.evidence),
       }));
       res.json(tasks);
       return;
@@ -103,20 +124,21 @@ app.get('/tasks', async (req, res) => {
 
 app.post('/tasks', async (req, res) => {
   const { id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt } = req.body;
+  const evidenceJson = serializeEvidence(evidence);
 
   try {
     if (usePostgres) {
       await db.query(
         `INSERT INTO tasks (id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt]
+        [id, title, description, date, priority, evidenceJson, hours, completed, createdAt, completedAt]
       );
       return res.status(201).json(req.body);
     }
 
     const stmt = sqliteDb.prepare(`INSERT INTO tasks (id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    stmt.run(id, title, description, date, priority, evidence, hours, completed ? 1 : 0, createdAt, completedAt, function (error) {
+    stmt.run(id, title, description, date, priority, evidenceJson, hours, completed ? 1 : 0, createdAt, completedAt, function (error) {
       if (error) return res.status(500).json({ error: error.message });
       res.status(201).json(req.body);
     });
@@ -129,19 +151,20 @@ app.post('/tasks', async (req, res) => {
 app.put('/tasks/:id', async (req, res) => {
   const { id } = req.params;
   const { title, description, date, priority, evidence, hours, completed, completedAt } = req.body;
+  const evidenceJson = serializeEvidence(evidence);
 
   try {
     if (usePostgres) {
       const result = await db.query(
         `UPDATE tasks SET title = $1, description = $2, date = $3, priority = $4, evidence = $5, hours = $6, completed = $7, completedAt = $8 WHERE id = $9`,
-        [title, description, date, priority, evidence, hours, completed, completedAt, id]
+        [title, description, date, priority, evidenceJson, hours, completed, completedAt, id]
       );
       if (result.rowCount === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
       return res.json({ success: true });
     }
 
     const stmt = sqliteDb.prepare(`UPDATE tasks SET title = ?, description = ?, date = ?, priority = ?, evidence = ?, hours = ?, completed = ?, completedAt = ? WHERE id = ?`);
-    stmt.run(title, description, date, priority, evidence, hours, completed ? 1 : 0, completedAt, id, function (error) {
+    stmt.run(title, description, date, priority, evidenceJson, hours, completed ? 1 : 0, completedAt, id, function (error) {
       if (error) return res.status(500).json({ error: error.message });
       if (this.changes === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
       res.json({ success: true });

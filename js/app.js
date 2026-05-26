@@ -19,11 +19,26 @@ async function apiJson(path, options = {}) {
   return response.json();
 }
 
+function normalizeEvidence(evidence) {
+  if (!evidence) return [];
+  if (Array.isArray(evidence)) return evidence;
+  if (typeof evidence === 'string') {
+    try {
+      const parsed = JSON.parse(evidence);
+      return Array.isArray(parsed) ? parsed : [{ name: 'Evidencia', data: evidence }];
+    } catch {
+      return [{ name: 'Evidencia', data: evidence }];
+    }
+  }
+  return [];
+}
+
 async function getTasks() {
   const tasks = await apiJson('/tasks');
   tasksCache = tasks.map((task) => ({
     ...task,
     completed: Boolean(task.completed),
+    evidence: normalizeEvidence(task.evidence),
   }));
   return tasksCache;
 }
@@ -105,7 +120,22 @@ function escHtml(value) {
 
 function initCreateForm() {
   const form = document.getElementById('taskForm');
+  const evidenceInput = document.getElementById('taskEvidenceImages');
+  const evidenceName = document.getElementById('taskEvidenceFileNames');
   if (!form) return;
+
+  if (evidenceInput && evidenceName) {
+    evidenceInput.addEventListener('change', () => {
+      const files = Array.from(evidenceInput.files);
+      if (files.length === 0) {
+        evidenceName.textContent = '';
+        evidenceName.style.display = 'none';
+        return;
+      }
+      evidenceName.textContent = `✓ ${files.length} archivo(s) seleccionado(s)`;
+      evidenceName.style.display = 'block';
+    });
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -119,12 +149,19 @@ function initCreateForm() {
       description: document.getElementById('taskDescription').value.trim(),
       date: document.getElementById('taskDate').value,
       priority: document.getElementById('taskPriority').value,
-      evidence: null,
+      evidence: [],
       hours: '',
       completed: false,
       createdAt: new Date().toISOString(),
       completedAt: null,
     };
+
+    if (evidenceInput?.files?.length) {
+      const files = Array.from(evidenceInput.files);
+      newTask.evidence = await Promise.all(
+        files.map(async (file) => ({ name: file.name, data: await readFileAsDataURL(file) }))
+      );
+    }
 
     try {
       await createTask(newTask);
@@ -144,8 +181,9 @@ async function initTaskList() {
   const editForm = document.getElementById('editTaskForm');
   const editFileInput = document.getElementById('editTaskEvidenceImage');
   const editFileName = document.getElementById('editFileName');
+  const editEvidenceCount = document.getElementById('editEvidenceCount');
+  const editEvidenceList = document.getElementById('editEvidenceList');
   const editPreviewWrap = document.getElementById('editEvidencePreviewWrap');
-  const editPreview = document.getElementById('editEvidencePreview');
   let activeEditId = null;
 
   async function refreshTable() {
@@ -174,11 +212,23 @@ async function initTaskList() {
         completed: document.getElementById('editTaskStatus').value === 'true',
       };
 
-      const file = editFileInput?.files?.[0];
+      const existingEvidence = normalizeEvidence(task.evidence);
+      const files = editFileInput?.files ? Array.from(editFileInput.files) : [];
+      if (files.length > 0) {
+        const newEvidence = await Promise.all(
+          files.map(async (file) => ({ name: file.name, data: await readFileAsDataURL(file) }))
+        );
+        updatedTask.evidence = [...existingEvidence, ...newEvidence];
+      } else {
+        updatedTask.evidence = existingEvidence;
+      }
+
+      if (updatedTask.completed && updatedTask.evidence.length < 5) {
+        showToast('Para completar la tarea debes subir al menos 5 evidencias.');
+        return;
+      }
+
       try {
-        if (file) {
-          updatedTask.evidence = await readFileAsDataURL(file);
-        }
         await updateTask(activeEditId, updatedTask);
         showToast('Tarea actualizada correctamente');
         closeEditPanel();
@@ -191,8 +241,8 @@ async function initTaskList() {
 
   if (editFileInput) {
     editFileInput.addEventListener('change', () => {
-      const file = editFileInput.files[0];
-      if (!file) {
+      const files = Array.from(editFileInput.files);
+      if (files.length === 0) {
         if (editFileName) {
           editFileName.textContent = '';
           editFileName.style.display = 'none';
@@ -200,7 +250,7 @@ async function initTaskList() {
         return;
       }
       if (editFileName) {
-        editFileName.textContent = `✓ ${file.name}`;
+        editFileName.textContent = `✓ ${files.length} archivo(s) seleccionado(s)`;
         editFileName.style.display = 'block';
       }
     });
@@ -220,6 +270,13 @@ async function initTaskList() {
     if (editFileName) {
       editFileName.textContent = '';
       editFileName.style.display = 'none';
+    }
+    if (editEvidenceCount) {
+      editEvidenceCount.textContent = '';
+      editEvidenceCount.style.display = 'none';
+    }
+    if (editEvidenceList) {
+      editEvidenceList.innerHTML = '';
     }
     if (editPreviewWrap) editPreviewWrap.style.display = 'none';
   }
@@ -243,9 +300,25 @@ async function initTaskList() {
       editFileName.style.display = 'none';
     }
 
-    if (task.evidence && editPreview) {
-      editPreview.src = task.evidence;
-      if (editPreviewWrap) editPreviewWrap.style.display = 'block';
+    const evidence = normalizeEvidence(task.evidence);
+    if (editEvidenceCount) {
+      editEvidenceCount.textContent = `${evidence.length} evidencia(s) cargada(s)`;
+      editEvidenceCount.style.display = 'block';
+    }
+    if (editEvidenceList) {
+      editEvidenceList.innerHTML = evidence
+        .map(
+          (item, index) => `
+            <div class="evidence-thumb-wrap">
+              <img class="evidence-thumb" src="${item.data}" alt="Evidencia ${index + 1}" />
+              <span class="evidence-label">${index + 1}</span>
+            </div>
+          `
+        )
+        .join('');
+    }
+    if (evidence.length > 0 && editPreviewWrap) {
+      editPreviewWrap.style.display = 'block';
     } else if (editPreviewWrap) {
       editPreviewWrap.style.display = 'none';
     }
@@ -271,7 +344,9 @@ async function initTaskList() {
     if (empty) empty.style.display = 'none';
 
     tbody.innerHTML = tasks
-      .map((task) => `
+      .map((task) => {
+        const evidence = normalizeEvidence(task.evidence);
+        return `
         <tr id="row-${task.id}">
           <td class="task-name">${escHtml(task.title)}</td>
           <td class="task-desc">${escHtml(task.description) || '<span style="color:var(--ink-3);font-style:italic">Sin descripción</span>'}</td>
@@ -279,8 +354,8 @@ async function initTaskList() {
           <td>${priorityBadge(task.priority)}</td>
           <td>${statusBadge(task.completed)}</td>
           <td>
-            ${task.evidence
-              ? `<div class="evidence-cell"><img class="evidence-thumb" src="${task.evidence}" alt="Evidencia"><button class="btn btn-sm btn-secondary" type="button" onclick="downloadEvidence('${task.id}')" title="Descargar evidencia">⬇</button></div>`
+            ${evidence.length > 0
+              ? `<div class="evidence-cell"><img class="evidence-thumb" src="${evidence[0].data}" alt="Evidencia"><span>${evidence.length} evidencia(s)</span><button class="btn btn-sm btn-secondary" type="button" onclick="downloadEvidence('${task.id}')" title="Descargar primera evidencia">⬇</button></div>`
               : '<span class="no-evidence">Sin evidencia</span>'}
           </td>
           <td>
@@ -304,8 +379,8 @@ async function initTaskList() {
               <button class="btn btn-sm btn-danger" onclick="deleteTask('${task.id}')" title="Eliminar">✕</button>
             </div>
           </td>
-        </tr>
-      `)
+        </tr>`;
+      })
       .join('');
 
     tbody.querySelectorAll('.hours-input').forEach((input) => {
@@ -364,10 +439,11 @@ async function initTaskList() {
 
   window.downloadEvidence = (id) => {
     const task = tasksCache.find((t) => String(t.id) === String(id));
-    if (!task || !task.evidence) return;
+    const evidence = task?.evidence?.[0];
+    if (!task || !evidence) return;
     const link = document.createElement('a');
-    link.href = task.evidence;
-    link.download = `evidencia-${id}.png`;
+    link.href = evidence.data;
+    link.download = evidence.name || `evidencia-${id}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
