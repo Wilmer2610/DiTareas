@@ -63,8 +63,12 @@
 
           <div class="form-grid form-grid-2">
             <div class="form-field">
-              <label class="form-label" for="editTaskDate">Fecha objetivo</label>
+              <label class="form-label" for="editTaskDate">Fecha de entrega</label>
               <input class="form-input" type="date" id="editTaskDate" />
+            </div>
+            <div class="form-field">
+              <label class="form-label" for="editTaskReminder">Recordatorio</label>
+              <input class="form-input" type="datetime-local" id="editTaskReminder" />
             </div>
             <div class="form-field">
               <label class="form-label" for="editTaskPriority">Prioridad</label>
@@ -131,7 +135,8 @@
               <tr>
                 <th>Tarea</th>
                 <th>Descripción</th>
-                <th>Fecha</th>
+                <th>Fecha entrega</th>
+                <th>Recordatorio</th>
                 <th>Prioridad</th>
                 <th>Estado</th>
                 <th>Evidencia</th>

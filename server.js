@@ -53,6 +53,7 @@ if (usePostgres) {
       title TEXT NOT NULL,
       description TEXT,
       date TEXT,
+      reminder TEXT,
       priority TEXT,
       evidence TEXT,
       hours REAL,
@@ -62,10 +63,12 @@ if (usePostgres) {
     );
   `;
 
-  db.query(createTableSql).catch((error) => {
-    console.error('Error creando la tabla tasks en PostgreSQL:', error.message);
-    process.exit(1);
-  });
+  db.query(createTableSql)
+    .then(() => db.query('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder TEXT'))
+    .catch((error) => {
+      console.error('Error creando la tabla tasks en PostgreSQL:', error.message);
+      process.exit(1);
+    });
 } else {
   const dbPath = path.join(__dirname, 'database', 'Ditarea.sqlite');
   sqliteDb = new sqlite3.Database(dbPath, (error) => {
@@ -81,6 +84,7 @@ if (usePostgres) {
       title TEXT NOT NULL,
       description TEXT,
       date TEXT,
+      reminder TEXT,
       priority TEXT,
       evidence TEXT,
       hours REAL,
@@ -88,6 +92,12 @@ if (usePostgres) {
       createdAt TEXT,
       completedAt TEXT
     )`);
+
+    sqliteDb.all(`PRAGMA table_info(tasks)`, (error, rows) => {
+      if (!error && Array.isArray(rows) && !rows.some((row) => row.name === 'reminder')) {
+        sqliteDb.run(`ALTER TABLE tasks ADD COLUMN reminder TEXT`);
+      }
+    });
   });
 }
 
@@ -123,22 +133,22 @@ app.get('/tasks', async (req, res) => {
 });
 
 app.post('/tasks', async (req, res) => {
-  const { id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt } = req.body;
+  const { id, title, description, date, reminder, priority, evidence, hours, completed, createdAt, completedAt } = req.body;
   const evidenceJson = serializeEvidence(evidence);
 
   try {
     if (usePostgres) {
       await db.query(
-        `INSERT INTO tasks (id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [id, title, description, date, priority, evidenceJson, hours, completed, createdAt, completedAt]
+        `INSERT INTO tasks (id, title, description, date, reminder, priority, evidence, hours, completed, createdAt, completedAt)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [id, title, description, date, reminder, priority, evidenceJson, hours, completed, createdAt, completedAt]
       );
       return res.status(201).json(req.body);
     }
 
-    const stmt = sqliteDb.prepare(`INSERT INTO tasks (id, title, description, date, priority, evidence, hours, completed, createdAt, completedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    stmt.run(id, title, description, date, priority, evidenceJson, hours, completed ? 1 : 0, createdAt, completedAt, function (error) {
+    const stmt = sqliteDb.prepare(`INSERT INTO tasks (id, title, description, date, reminder, priority, evidence, hours, completed, createdAt, completedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    stmt.run(id, title, description, date, reminder, priority, evidenceJson, hours, completed ? 1 : 0, createdAt, completedAt, function (error) {
       if (error) return res.status(500).json({ error: error.message });
       res.status(201).json(req.body);
     });
@@ -150,21 +160,21 @@ app.post('/tasks', async (req, res) => {
 
 app.put('/tasks/:id', async (req, res) => {
   const { id } = req.params;
-  const { title, description, date, priority, evidence, hours, completed, completedAt } = req.body;
+  const { title, description, date, reminder, priority, evidence, hours, completed, completedAt } = req.body;
   const evidenceJson = serializeEvidence(evidence);
 
   try {
     if (usePostgres) {
       const result = await db.query(
-        `UPDATE tasks SET title = $1, description = $2, date = $3, priority = $4, evidence = $5, hours = $6, completed = $7, completedAt = $8 WHERE id = $9`,
-        [title, description, date, priority, evidenceJson, hours, completed, completedAt, id]
+        `UPDATE tasks SET title = $1, description = $2, date = $3, reminder = $4, priority = $5, evidence = $6, hours = $7, completed = $8, completedAt = $9 WHERE id = $10`,
+        [title, description, date, reminder, priority, evidenceJson, hours, completed, completedAt, id]
       );
       if (result.rowCount === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
       return res.json({ success: true });
     }
 
-    const stmt = sqliteDb.prepare(`UPDATE tasks SET title = ?, description = ?, date = ?, priority = ?, evidence = ?, hours = ?, completed = ?, completedAt = ? WHERE id = ?`);
-    stmt.run(title, description, date, priority, evidenceJson, hours, completed ? 1 : 0, completedAt, id, function (error) {
+    const stmt = sqliteDb.prepare(`UPDATE tasks SET title = ?, description = ?, date = ?, reminder = ?, priority = ?, evidence = ?, hours = ?, completed = ?, completedAt = ? WHERE id = ?`);
+    stmt.run(title, description, date, reminder, priority, evidenceJson, hours, completed ? 1 : 0, completedAt, id, function (error) {
       if (error) return res.status(500).json({ error: error.message });
       if (this.changes === 0) return res.status(404).json({ error: 'Tarea no encontrada' });
       res.json({ success: true });

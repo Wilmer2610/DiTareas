@@ -95,6 +95,18 @@ function formatDate(iso) {
   return `${d}/${m}/${y}`;
 }
 
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
 function priorityBadge(p) {
   const map = { Alta: 'badge-alta', Media: 'badge-media', Baja: 'badge-baja' };
   return `<span class="badge ${map[p] || 'badge-baja'}">${p}</span>`;
@@ -166,6 +178,7 @@ function initCreateForm() {
       title,
       description: document.getElementById('taskDescription').value.trim(),
       date: document.getElementById('taskDate').value,
+      reminder: document.getElementById('taskReminder').value,
       priority: document.getElementById('taskPriority').value,
       evidence: [],
       hours: '',
@@ -247,6 +260,7 @@ async function initTaskList() {
         title,
         description: document.getElementById('editTaskDescription').value.trim(),
         date: document.getElementById('editTaskDate').value,
+        reminder: document.getElementById('editTaskReminder').value,
         priority: document.getElementById('editTaskPriority').value,
         hours: document.getElementById('editTaskHours').value,
         completed: document.getElementById('editTaskStatus').value === 'true',
@@ -330,6 +344,7 @@ async function initTaskList() {
     document.getElementById('editTaskTitle').value = task.title || '';
     document.getElementById('editTaskDescription').value = task.description || '';
     document.getElementById('editTaskDate').value = task.date || '';
+    document.getElementById('editTaskReminder').value = task.reminder || '';
     document.getElementById('editTaskPriority').value = task.priority || 'Media';
     document.getElementById('editTaskHours').value = task.hours || '';
     document.getElementById('editTaskStatus').value = task.completed ? 'true' : 'false';
@@ -391,6 +406,7 @@ async function initTaskList() {
           <td class="task-name">${escHtml(task.title)}</td>
           <td class="task-desc">${escHtml(task.description) || '<span style="color:var(--ink-3);font-style:italic">Sin descripción</span>'}</td>
           <td>${formatDate(task.date)}</td>
+          <td>${task.reminder ? formatDateTime(task.reminder) : '<span class="no-evidence">Sin recordatorio</span>'}</td>
           <td>${priorityBadge(task.priority)}</td>
           <td>${statusBadge(task.completed)}</td>
           <td>
