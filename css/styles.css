@@ -617,6 +617,12 @@ td.task-desc {
   display: block;
 }
 
+.evidence-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .no-evidence {
   font-size: 0.78rem;
   color: var(--ink-3);

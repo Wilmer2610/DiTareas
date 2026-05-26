@@ -218,7 +218,7 @@ function initTaskList() {
         <td>${statusBadge(task.done)}</td>
         <td>
           ${task.evidence
-            ? `<img class="evidence-thumb" src="${task.evidence}" alt="Evidencia">`
+            ? `<div class="evidence-cell"><img class="evidence-thumb" src="${task.evidence}" alt="Evidencia"><button class="btn btn-sm btn-secondary" type="button" onclick="downloadEvidence(${task.id})" title="Descargar evidencia">⬇</button></div>`
             : '<span class="no-evidence">Sin evidencia</span>'}
         </td>
         <td>
@@ -276,6 +276,26 @@ function initTaskList() {
     saveTasks(tasks);
     renderTable();
     showToast('Tarea eliminada');
+  };
+
+  window.downloadEvidence = (id) => {
+    const tasks = getTasks();
+    const task = tasks.find(t => t.id === id);
+    if (!task || !task.evidence) return;
+
+    const dataUrl = task.evidence;
+    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,/.exec(dataUrl);
+    const mime = match ? match[1] : 'image/png';
+    const ext = mime.split('/')[1] || 'png';
+    const safeTitle = task.title ? task.title.replace(/[^a-zA-Z0-9-_\.]/g, '_').slice(0, 40) : 'evidencia';
+    const fileName = `${safeTitle}.${ext}`;
+
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 }
 
