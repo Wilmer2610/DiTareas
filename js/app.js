@@ -61,33 +61,20 @@ function initCreateForm() {
     const title = document.getElementById('taskTitle').value.trim();
     if (!title) return;
 
-    const fileInput = document.getElementById('taskEvidenceImage');
-    const file = fileInput?.files[0];
-
-    const saveTask = (imageData) => {
-      const tasks = getTasks();
-      tasks.push({
-        id: Date.now(),
-        title,
-        description: document.getElementById('taskDescription').value.trim(),
-        date: document.getElementById('taskDate').value,
-        priority: document.getElementById('taskPriority').value,
-        done: false,
-        hours: '',
-        evidence: imageData || null,
-      });
-      saveTasks(tasks);
-      showToast('Tarea creada correctamente');
-      setTimeout(() => window.location.href = 'tareas.html', 900);
-    };
-
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => saveTask(ev.target.result);
-      reader.readAsDataURL(file);
-    } else {
-      saveTask(null);
-    }
+    const tasks = getTasks();
+    tasks.push({
+      id: Date.now(),
+      title,
+      description: document.getElementById('taskDescription').value.trim(),
+      date: document.getElementById('taskDate').value,
+      priority: document.getElementById('taskPriority').value,
+      done: false,
+      hours: '',
+      evidence: null,
+    });
+    saveTasks(tasks);
+    showToast('Tarea creada correctamente');
+    setTimeout(() => window.location.href = 'tareas.html', 900);
   });
 }
 
@@ -98,6 +85,112 @@ function initTaskList() {
   if (!tbody) return;
 
   renderTable();
+
+  const editPanel = document.getElementById('editPanel');
+  const editForm = document.getElementById('editTaskForm');
+  const editFileInput = document.getElementById('editTaskEvidenceImage');
+  const editFileName = document.getElementById('editFileName');
+  const editPreviewWrap = document.getElementById('editEvidencePreviewWrap');
+  const editPreview = document.getElementById('editEvidencePreview');
+  let activeEditId = null;
+
+  if (editForm) {
+    editForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!activeEditId) return;
+
+      const tasks = getTasks();
+      const task = tasks.find((t) => String(t.id) === String(activeEditId));
+      if (!task) return;
+
+      const title = document.getElementById('editTaskTitle').value.trim();
+      if (!title) return;
+
+      const updateTask = (imageData) => {
+        task.title = title;
+        task.description = document.getElementById('editTaskDescription').value.trim();
+        task.date = document.getElementById('editTaskDate').value;
+        task.priority = document.getElementById('editTaskPriority').value;
+        task.hours = document.getElementById('editTaskHours').value;
+        task.done = document.getElementById('editTaskStatus').value === 'true';
+        if (imageData !== undefined) task.evidence = imageData;
+        saveTasks(tasks);
+        renderTable();
+        showToast('Tarea actualizada correctamente');
+        closeEditPanel();
+      };
+
+      const file = editFileInput?.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => updateTask(event.target.result);
+        reader.readAsDataURL(file);
+      } else {
+        updateTask();
+      }
+    });
+  }
+
+  if (editFileInput) {
+    editFileInput.addEventListener('change', () => {
+      const file = editFileInput.files[0];
+      if (!file) {
+        editFileName.textContent = '';
+        editFileName.style.display = 'none';
+        return;
+      }
+      editFileName.textContent = `✓ ${file.name}`;
+      editFileName.style.display = 'block';
+    });
+  }
+
+  const cancelEditBtn = document.getElementById('cancelEditBtn');
+  if (cancelEditBtn) {
+    cancelEditBtn.addEventListener('click', () => {
+      closeEditPanel();
+    });
+  }
+
+  function closeEditPanel() {
+    activeEditId = null;
+    if (editPanel) editPanel.style.display = 'none';
+    if (editFileInput) editFileInput.value = '';
+    if (editFileName) {
+      editFileName.textContent = '';
+      editFileName.style.display = 'none';
+    }
+    if (editPreviewWrap) editPreviewWrap.style.display = 'none';
+  }
+
+  window.openEditTask = (id) => {
+    const tasks = getTasks();
+    const task = tasks.find((t) => String(t.id) === String(id));
+    if (!task || !editPanel) return;
+
+    activeEditId = id;
+    editPanel.style.display = 'block';
+    document.getElementById('editTaskTitle').value = task.title || '';
+    document.getElementById('editTaskDescription').value = task.description || '';
+    document.getElementById('editTaskDate').value = task.date || '';
+    document.getElementById('editTaskPriority').value = task.priority || 'Media';
+    document.getElementById('editTaskHours').value = task.hours || '';
+    document.getElementById('editTaskStatus').value = task.done ? 'true' : 'false';
+
+    if (editFileInput) editFileInput.value = '';
+    if (editFileName) {
+      editFileName.textContent = '';
+      editFileName.style.display = 'none';
+    }
+
+    if (task.evidence) {
+      if (editPreview) editPreview.src = task.evidence;
+      if (editPreviewWrap) editPreviewWrap.style.display = 'block';
+    } else {
+      if (editPreviewWrap) editPreviewWrap.style.display = 'none';
+    }
+
+    window.scrollTo({ top: editPanel.offsetTop - 20, behavior: 'smooth' });
+  };
 
   function renderTable() {
     const tasks = getTasks();
@@ -142,6 +235,7 @@ function initTaskList() {
         </td>
         <td>
           <div class="action-group">
+            <button class="btn btn-sm btn-secondary" onclick="openEditTask(${task.id})" title="Editar tarea">✎</button>
             ${!task.done
               ? `<button class="btn btn-sm btn-secondary" onclick="markDone(${task.id})" title="Marcar completada">✓</button>`
               : `<button class="btn btn-sm btn-ghost" onclick="markPending(${task.id})" title="Marcar pendiente">↺</button>`}
